@@ -1,4 +1,8 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Threading.Tasks;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Media;
@@ -10,6 +14,10 @@ namespace Xamarin.Forms.Platform.UWP
 {
 	public class EditorRenderer : ViewRenderer<Editor, FormsTextBox>
 	{
+		private static FormsTextBox copyOfTextBox;
+		static Windows.Foundation.Size _zeroSize = new Windows.Foundation.Size(0, 0);
+		static Windows.Foundation.Size _infiniteSize = new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity);
+
 		bool _fontApplied;
 		Brush _backgroundColorFocusedDefaultBrush;
 		Brush _textDefaultBrush;
@@ -132,6 +140,81 @@ namespace Xamarin.Forms.Platform.UWP
 			Element.SetValueCore(Editor.TextProperty, Control.Text);
 		}
 
+		/// <summary>
+		/// Use cases
+		/// - Initializing a text box that's horizontally contrained but not vertically. If I left out the initial measure it'd just break
+		/// - Textboxes refuse to grow horizontally once they are part of a layout and have a set desired size and they are set to wordwrap 
+		/// </summary>
+		/// <param name="control"></param>
+		/// <param name="constraint"></param>
+		/// <returns></returns>
+		Size GetCopyOfSize(FormsTextBox control, Windows.Foundation.Size constraint)
+		{
+			if (copyOfTextBox == null)
+			{
+				copyOfTextBox = new FormsTextBox
+				{
+					AcceptsReturn = true,
+					TextWrapping = TextWrapping.Wrap,
+					Style = Windows.UI.Xaml.Application.Current.Resources["FormsTextBoxStyle"] as Windows.UI.Xaml.Style
+				};
+
+				// This causes the copy to be initially setup correctly. I'm not quite sure why this is needed but I found
+				// that if the first measure of this copy occurs with Text then it will just keep defaulting to a measure with no text.
+				// My assumption is that the textbox assumes its first measure is in an empty state so it has to calibrate
+				// or some variation of that logic
+
+				copyOfTextBox.Measure(_zeroSize);
+			}
+
+
+			copyOfTextBox.Text = control.Text;
+			copyOfTextBox.FontSize = control.FontSize;
+			copyOfTextBox.FontFamily = control.FontFamily;
+			copyOfTextBox.FontStretch = control.FontStretch;
+			copyOfTextBox.FontStyle = control.FontStyle;
+			copyOfTextBox.FontWeight = control.FontWeight;
+			copyOfTextBox.Margin = control.Margin;
+			copyOfTextBox.Padding = control.Padding;
+			copyOfTextBox.Measure(_zeroSize);
+			copyOfTextBox.Measure(constraint);
+
+			Size result = new Size
+			(
+				Math.Ceiling(copyOfTextBox.DesiredSize.Width),
+				Math.Ceiling(copyOfTextBox.DesiredSize.Height)
+			);
+
+			return result;
+		}
+
+
+		SizeRequest CalculateDesiredSizes(FormsTextBox control, Windows.Foundation.Size constraint, EditorSizeOption sizeOption)
+		{
+			if (sizeOption == EditorSizeOption.AutoSizeToTextChanges)
+			{
+				Size result = GetCopyOfSize(control, constraint);
+				control.Measure(constraint);
+				return new SizeRequest(result);
+			}
+			else
+			{
+				control.Measure(constraint);
+				Size result = new Size(Math.Ceiling(control.DesiredSize.Width), Math.Ceiling(control.DesiredSize.Height));
+				return new SizeRequest(result);
+			}
+		}
+
+		public override SizeRequest GetDesiredSize(double widthConstraint, double heightConstraint)
+		{
+			FormsTextBox child = Control;
+
+			if (Children.Count == 0 || child == null)
+				return new SizeRequest();
+
+			return CalculateDesiredSizes(child, new Windows.Foundation.Size(widthConstraint, heightConstraint), Element.SizeOption);
+		}
+
 		void UpdateFont()
 		{
 			if (Control == null)
@@ -143,8 +226,8 @@ namespace Xamarin.Forms.Platform.UWP
 				return;
 
 			bool editorIsDefault = editor.FontFamily == null &&
-			                       editor.FontSize == Device.GetNamedSize(NamedSize.Default, typeof(Editor), true) &&
-			                       editor.FontAttributes == FontAttributes.None;
+								   editor.FontSize == Device.GetNamedSize(NamedSize.Default, typeof(Editor), true) &&
+								   editor.FontAttributes == FontAttributes.None;
 
 			if (editorIsDefault && !_fontApplied)
 				return;
@@ -232,7 +315,7 @@ namespace Xamarin.Forms.Platform.UWP
 			if (currentControlText.Length > Element.MaxLength)
 				Control.Text = currentControlText.Substring(0, Element.MaxLength);
 		}
-    
+
 		void UpdateDetectReadingOrderFromContent()
 		{
 			if (Element.IsSet(Specifics.DetectReadingOrderFromContentProperty))

@@ -54,7 +54,7 @@ namespace Xamarin.Forms.Platform.UWP
 		{
 			TextChanged += OnTextChanged;
 			SelectionChanged += OnSelectionChanged;
-			IsEnabledChanged += OnIsEnabledChanged;
+			IsEnabledChanged += OnIsEnabledChanged;			
 		}
 
 		void OnIsEnabledChanged(object sender, DependencyPropertyChangedEventArgs dependencyPropertyChangedEventArgs)
